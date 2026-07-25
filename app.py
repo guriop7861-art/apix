@@ -46,5 +46,5 @@ def truecaller_api():
         return jsonify({"error": "Missing number parameter"}), 400
     result = fetch_truecaller(number)
     return jsonify(result)
-nameme__ mainin__":
+if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000, debug=True)
