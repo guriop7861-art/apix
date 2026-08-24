@@ -8,8 +8,6 @@ app = FastAPI()
 con = duckdb.connect()
 con.execute("INSTALL httpfs;")
 con.execute("LOAD httpfs;")
-con.execute("SET enable_http_metadata_cache=true;")
-con.execute("SET custom_user_agent='Mozilla/5.0';")
 
 LANDING_PAGE_HTML = """
 <!DOCTYPE html>
