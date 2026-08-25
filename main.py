@@ -5,9 +5,13 @@ import duckdb
 
 app = FastAPI()
 
+# In-memory DuckDB setup with caching & performance tweaks
 con = duckdb.connect()
-con.execute("INSTALL httpfs;")
-con.execute("LOAD httpfs;")
+con.execute("INSTALL httpfs; LOAD httpfs;")
+con.execute("SET enable_http_metadata_cache = true;")
+con.execute("SET enable_object_cache = true;")
+con.execute("SET http_keep_alive = true;")
+con.execute("SET preserve_insertion_order = false;")
 
 LANDING_PAGE_HTML = """
 <!DOCTYPE html>
@@ -42,48 +46,50 @@ def root_landing_page():
 
 @app.get("/FetchData")
 def fetch_data(Number: str = Query(None)):
-    if not Number or not Number.isdigit() or len(Number) < 10 or len(Number) > 15:
+    # Strict 10-digit validation
+    if not Number or not Number.isdigit() or len(Number) != 10:
         return JSONResponse(
             status_code=400,
-            content={"status": "rejected", "message": "Invalid parameter"}
+            content={"status": "rejected", "message": "Please enter a valid 10-digit number"}
         )
     
     last_digit = Number[-1]
     
     primary_url = f"https://huggingface.co/buckets/CutehackX/hitek-data-bucket/resolve/final_master_shard_{last_digit}.parquet?download=true"
     alt_url = f"https://huggingface.co/buckets/CutehackX/hitek-data-bucket/resolve/alt_master_shard_{last_digit}.parquet?download=true"
+    third_url = "https://huggingface.co/datasets/Kzr0xx/icrm-hitek-full-db-mixed/resolve/main/idx_aadhar.0.parquet?download=true"
     
     try:
+        # UNION ALL BY NAME use kiya hai taaki different schemas merge ho jayein
         query = f"""
-            SELECT *, 'Main' AS _record_type FROM read_parquet('{primary_url}') WHERE mobile = '{Number}'
-            UNION ALL
-            SELECT *, 'Alt' AS _record_type FROM read_parquet('{alt_url}') WHERE alt = '{Number}'
+            SELECT *, 'Primary_DB' AS _source FROM read_parquet('{primary_url}') WHERE mobile = $1
+            UNION ALL BY NAME
+            SELECT *, 'Alt_DB' AS _source FROM read_parquet('{alt_url}') WHERE alt = $1
+            UNION ALL BY NAME
+            SELECT *, 'Third_DB' AS _source FROM read_parquet('{third_url}') WHERE mobile = $1
         """
         
-        raw_results = con.execute(query).df().to_dict(orient="records")
+        cursor = con.cursor()
+        raw_results = cursor.execute(query, [Number]).fetchall()
+        col_names = [desc[0] for desc in cursor.description]
         
-        main_records = []
-        alt_records = []
-        
+        all_records = []
         for row in raw_results:
-            rec_type = row.pop('_record_type')
-            if rec_type == 'Main':
-                main_records.append(row)
-            else:
-                alt_records.append(row)
+            # Null values aur source tag ko parse karke dict banayega
+            row_dict = {col: val for col, val in zip(col_names, row) if val is not None}
+            all_records.append(row_dict)
         
-        if not main_records and not alt_records:
+        if not all_records:
             return JSONResponse(
                 status_code=404,
-                content={"status": "not_found", "phone": Number}
+                content={"status": "not_found", "phone": Number, "message": "No data found for this number"}
             )
             
         return {
-            "status": "success", 
-            "Data": {
-                "Main_Records": main_records,
-                "Alt_Records": alt_records
-            }
+            "status": "success",
+            "phone": Number,
+            "total_records": len(all_records),
+            "records": all_records
         }
         
     except Exception as e:
