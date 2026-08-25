@@ -60,13 +60,22 @@ def fetch_data(Number: str = Query(None)):
     third_url = "https://huggingface.co/datasets/Kzr0xx/icrm-hitek-full-db-mixed/resolve/main/idx_aadhar.0.parquet?download=true"
     
     try:
-        # UNION ALL BY NAME use kiya hai taaki different schemas merge ho jayein
         query = f"""
-            SELECT *, 'Primary_DB' AS _source FROM read_parquet('{primary_url}') WHERE mobile = $1
+            SELECT *, 'Primary_DB' AS _source 
+            FROM read_parquet('{primary_url}') 
+            WHERE mobile = $1
+            
             UNION ALL BY NAME
-            SELECT *, 'Alt_DB' AS _source FROM read_parquet('{alt_url}') WHERE alt = $1
+            
+            SELECT *, 'Alt_DB' AS _source 
+            FROM read_parquet('{alt_url}') 
+            WHERE mobile = $1
+            
             UNION ALL BY NAME
-            SELECT *, 'Third_DB' AS _source FROM read_parquet('{third_url}') WHERE mobile = $1
+            
+            SELECT *, 'Third_DB' AS _source 
+            FROM read_parquet('{third_url}') 
+            WHERE "phoneNumber" = $1 OR "otherNumber" = $1
         """
         
         cursor = con.cursor()
@@ -75,7 +84,6 @@ def fetch_data(Number: str = Query(None)):
         
         all_records = []
         for row in raw_results:
-            # Null values aur source tag ko parse karke dict banayega
             row_dict = {col: val for col, val in zip(col_names, row) if val is not None}
             all_records.append(row_dict)
         
